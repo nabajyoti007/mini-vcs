@@ -318,3 +318,144 @@ def test_failed_checkout_leaves_current_branch_unchanged():
         repo.checkout("does_not_exist")
 
     assert repo.current_branch == "main"
+
+# Feature 5: Merge
+
+def test_merge_adds_commit_to_current_branch():
+    repo = Repository()
+
+    repo.commit("Base", {"base.txt": "A"})
+    repo.create_branch("feature")
+
+    repo.checkout("feature")
+    repo.commit("Feature work", {"feature.txt": "B"})
+
+    repo.checkout("main")
+    history_before = len(repo.history())
+
+    repo.merge("feature")
+
+    assert len(repo.history()) == history_before + 1
+
+
+def test_merge_commit_contains_source_changes():
+    repo = Repository()
+
+    repo.commit("Base", {"base.txt": "A"})
+    repo.create_branch("feature")
+
+    repo.checkout("feature")
+    repo.commit("Feature work", {"feature.txt": "B"})
+
+    repo.checkout("main")
+    repo.merge("feature")
+
+    merge_commit = repo.history()[-1]
+
+    assert merge_commit["changes"] == {"feature.txt": "B"}
+
+
+def test_merge_preserves_current_branch_history():
+    repo = Repository()
+
+    repo.commit("Base", {"base.txt": "A"})
+    repo.create_branch("feature")
+
+    repo.commit("Main work", {"main.txt": "M"})
+
+    repo.checkout("feature")
+    repo.commit("Feature work", {"feature.txt": "F"})
+
+    repo.checkout("main")
+    repo.merge("feature")
+
+    messages = [commit["message"] for commit in repo.history()]
+
+    assert messages[0] == "Base"
+    assert messages[1] == "Main work"
+    assert len(messages) == 3
+
+
+def test_source_branch_is_unchanged_after_merge():
+    repo = Repository()
+
+    repo.commit("Base", {"base.txt": "A"})
+    repo.create_branch("feature")
+
+    repo.checkout("feature")
+    repo.commit("Feature work", {"feature.txt": "B"})
+
+    source_history_before = list(repo.history())
+    source_head_before = repo.branches["feature"]
+
+    repo.checkout("main")
+    repo.merge("feature")
+
+    repo.checkout("feature")
+
+    assert repo.history() == source_history_before
+    assert repo.branches["feature"] == source_head_before
+
+
+def test_merge_when_source_has_no_new_commits_creates_merge_commit():
+    repo = Repository()
+
+    repo.commit("Base", {"base.txt": "A"})
+    repo.create_branch("feature")
+
+    history_before = len(repo.history())
+
+    repo.merge("feature")
+
+    assert len(repo.history()) == history_before + 1
+    assert repo.history()[-1]["changes"] == {}
+
+
+def test_merge_multiple_source_changes():
+    repo = Repository()
+
+    repo.commit("Base", {"base.txt": "A"})
+    repo.create_branch("feature")
+
+    repo.checkout("feature")
+    repo.commit("First feature change", {"a.txt": "1"})
+    repo.commit("Second feature change", {"b.txt": "2", "c.txt": "3"})
+
+    repo.checkout("main")
+    repo.merge("feature")
+
+    assert repo.history()[-1]["changes"] == {
+        "a.txt": "1",
+        "b.txt": "2",
+        "c.txt": "3",
+    }
+
+
+def test_merge_of_nonexistent_branch_is_rejected():
+    repo = Repository()
+
+    with pytest.raises(ValueError):
+        repo.merge("does_not_exist")
+
+
+def test_merge_branch_into_itself_is_rejected():
+    repo = Repository()
+
+    with pytest.raises(ValueError):
+        repo.merge("main")
+
+
+def test_failed_merge_leaves_current_branch_unchanged():
+    repo = Repository()
+
+    repo.commit("Base", {"base.txt": "A"})
+
+    history_before = list(repo.history())
+    head_before = repo.branches["main"]
+
+    with pytest.raises(ValueError):
+        repo.merge("does_not_exist")
+
+    assert repo.history() == history_before
+    assert repo.branches["main"] == head_before
+    assert repo.current_branch == "main"
