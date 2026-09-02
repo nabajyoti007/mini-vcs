@@ -2441,11 +2441,606 @@ Feature 6 will use the same AI-assisted TDD process to implement the remaining c
 - Continue supporting non-conflicting merges.
 ---
 
-# Stage 6 — Evaluation and Improvement of AI Output
+# Stage 6 — Feature 6: Conflict Detection
 
-**Status:** To be completed during development.
+## 6.1 Feature Description
 
-This section will document specific examples where AI-generated code or tests contained incorrect assumptions, defects, missing cases, or maintainability issues. Where appropriate, before-and-after examples and regression tests will be recorded.
+The sixth feature developed using AI-assisted Test-Driven Development was conflict detection during branch merging.
+
+Feature 5 provided non-conflicting merge functionality, but it did not detect situations where both branches modified the same file differently after divergence.
+
+The requirements for Feature 6 were:
+
+- A conflict occurs when the same file is modified differently on both branches after divergence.
+- Changes made before divergence must not be considered conflicts.
+- If only one branch modifies a file, the merge must succeed.
+- If both branches modify the same file to the same content, it must not be treated as a conflict.
+- If both branches add the same new file with different contents, it is a conflict.
+- Multiple conflicting filenames must be reported.
+- One conflict among several changes must cause the whole merge to fail.
+- A conflicting merge must not create a merge commit.
+- A conflicting merge must leave the current branch unchanged.
+- A conflicting merge must leave the source branch unchanged.
+- Existing Features 1–5 must continue to work.
+
+---
+
+## 6.2 Initial AI Test-Design Prompt
+
+Before modifying the existing merge implementation, Claude was asked to design tests for conflict detection.
+
+The prompt explained the existing commit structure:
+
+```python
+{
+    "id": commit_id,
+    "message": message,
+    "changes": dict(changes)
+}
+```
+
+It also explained that the existing `merge(source_branch)` implementation could merge source-side changes but did not yet detect conflicts.
+
+Claude was specifically asked to generate only pytest test designs covering:
+
+- normal non-conflicting cases,
+- direct conflict cases,
+- identical-change cases,
+- multiple-file cases,
+- state-preservation cases,
+- regression-relevant cases.
+
+The prompt also instructed the AI:
+
+- not to implement conflict detection yet,
+- not to modify `merge()`,
+- not to add `get_files()`,
+- not to add optional parameters to `history()`,
+- not to invent unnecessary public APIs,
+- and to consider all existing 43 tests from Features 1–5.
+
+---
+
+## 6.3 AI Test-Design Response Summary
+
+Claude proposed fifteen possible tests.
+
+The proposed tests covered:
+
+- different files changed on different branches,
+- source-only changes,
+- the same file changed differently,
+- identifying conflicting filenames,
+- the same new file added differently,
+- identical changes to the same file,
+- identical additions,
+- one conflict among multiple changes,
+- multiple conflicts,
+- preservation of history after conflict,
+- preservation of branch heads,
+- preservation of the source branch,
+- regression tests for invalid merges,
+- and recovery after a conflict.
+
+Claude also suggested introducing a new exception:
+
+```python
+MergeConflictError
+```
+
+with a `files` attribute for accessing conflicting filenames.
+
+The AI identified several limitations of the current data model, including the absence of a full Git-style common-ancestor representation and the fact that commits store changes rather than complete snapshots.
+
+---
+
+## 6.4 My Evaluation of the AI-Generated Test Design
+
+The AI-generated test design provided useful conflict scenarios, but I modified it before implementation.
+
+I selected ten tests that directly matched the specification and the existing MiniVCS API.
+
+The selected tests covered:
+
+1. Different files merging without conflict.
+2. A source-only change not being considered a conflict.
+3. The same file changed differently producing a conflict.
+4. The conflict error identifying the filename.
+5. The same file changed to the same content not producing a conflict.
+6. A new file added differently on both branches producing a conflict.
+7. One conflict among multiple changes failing the whole merge.
+8. Multiple conflicting filenames being reported.
+9. A conflicting merge leaving both branches unchanged.
+10. The same new file added with identical content not producing a conflict.
+
+I rejected the proposed `MergeConflictError` API at the test-design stage.
+
+The existing project already used `ValueError` for invalid operations, and the specification required conflicting filenames to be reported but did not require a new public exception class.
+
+Therefore, the tests used:
+
+```python
+with pytest.raises(ValueError) as error:
+    repo.merge("feature")
+```
+
+and checked the error message when necessary:
+
+```python
+assert "shared.txt" in str(error.value)
+```
+
+Existing Feature 5 tests already covered missing branches and self-merges, so duplicate regression tests for these behaviours were not added.
+
+### Decision
+
+**Modified**
+
+The AI-generated test ideas were useful, but the proposed public exception API and some redundant tests were rejected.
+
+---
+
+## 6.5 Feature 6 Automated Tests
+
+Ten new tests were added to `tests/test_mini_vcs.py` before conflict-detection implementation.
+
+A direct conflict was tested using a scenario where both branches changed the same file differently:
+
+```python
+def test_same_file_changed_differently_is_a_conflict():
+    repo = Repository()
+
+    repo.commit("Base", {"shared.txt": "original"})
+    repo.create_branch("feature")
+
+    repo.commit("Main change", {"shared.txt": "main version"})
+
+    repo.checkout("feature")
+    repo.commit("Feature change", {"shared.txt": "feature version"})
+
+    repo.checkout("main")
+
+    with pytest.raises(ValueError):
+        repo.merge("feature")
+```
+
+The filename-reporting requirement was tested separately:
+
+```python
+with pytest.raises(ValueError) as error:
+    repo.merge("feature")
+
+assert "shared.txt" in str(error.value)
+```
+
+The tests also checked that identical changes were not incorrectly classified as conflicts.
+
+For example:
+
+```python
+repo.commit("Main change", {"shared.txt": "same"})
+
+repo.checkout("feature")
+repo.commit("Feature change", {"shared.txt": "same"})
+```
+
+The merge was expected to succeed because both branches reached the same content.
+
+Multiple-file scenarios were also tested to ensure that one conflicting file caused the entire merge to fail and that multiple conflicting filenames were reported.
+
+---
+
+## 6.6 RED Stage — Initial Test Execution
+
+After adding the ten Feature 6 tests, the complete test suite was executed before changing `merge()`:
+
+```text
+python -m pytest -v
+```
+
+The result was:
+
+```text
+6 failed, 47 passed in 0.48s
+```
+
+This was an important RED result because not all ten new tests failed.
+
+Four new tests already passed because the existing Feature 5 merge implementation correctly handled several non-conflicting scenarios.
+
+The six failing tests specifically exposed the missing conflict-detection behaviour:
+
+```text
+test_same_file_changed_differently_is_a_conflict
+test_conflict_error_identifies_filename
+test_new_file_added_differently_on_both_branches_is_conflict
+test_one_conflict_among_multiple_changes_fails_whole_merge
+test_multiple_conflicting_filenames_are_reported
+test_conflicting_merge_leaves_current_branch_unchanged
+```
+
+The common failure was that the existing implementation did not raise `ValueError` when conflicting changes were encountered.
+
+For example:
+
+```text
+Failed: DID NOT RAISE ValueError
+```
+
+### Result
+
+**RED — 6 failed, 47 passed**
+
+### Evidence
+
+`screenshots/11_conflict_red.png`
+
+This RED result demonstrated that the previous features remained functional while the newly specified conflict behaviour was not yet implemented.
+
+---
+
+## 6.7 AI Implementation Prompt
+
+After recording the RED result, Claude was asked to provide the smallest implementation change needed to make the Feature 6 tests pass.
+
+The AI was given:
+
+- the existing `Repository` implementation,
+- the current `merge()` implementation,
+- the result of `6 failed, 47 passed`,
+- the names of all six failing tests,
+- and the complete conflict-detection requirements.
+
+The prompt specifically required:
+
+- conflict detection based on changes after divergence,
+- identical changes not to produce false conflicts,
+- validation before repository mutation,
+- preservation of both branches after conflict,
+- use of `ValueError`,
+- no `MergeConflictError`,
+- no `get_files()`,
+- no new public APIs,
+- and preservation of all Features 1–5.
+
+---
+
+## 6.8 AI Implementation Response Summary
+
+Claude proposed calculating post-divergence changes on both branches.
+
+It introduced the idea of:
+
+```python
+our_changes
+```
+
+for changes made on the current branch and:
+
+```python
+their_changes
+```
+
+for changes made on the source branch.
+
+The AI proposed collecting the commit IDs from both histories and accumulating changes from commits that were not shared with the other branch.
+
+The main conflict condition proposed by Claude was:
+
+```python
+name in our_changes and our_changes[name] != content
+```
+
+This means a conflict occurs only when:
+
+1. both branches changed the same filename after divergence, and
+2. the final changed contents are different.
+
+The AI also proposed collecting all conflicts before raising an exception so that multiple conflicting filenames could be reported together.
+
+However, despite the explicit instruction not to introduce a new exception class, Claude proposed:
+
+```python
+class MergeConflictError(Exception):
+```
+
+and:
+
+```python
+raise MergeConflictError(conflicts)
+```
+
+---
+
+## 6.9 Critical Evaluation and Modification of AI Output
+
+The conflict-detection algorithm proposed by Claude was useful, but its exception design was rejected.
+
+The implementation prompt explicitly stated:
+
+```text
+Do NOT introduce MergeConflictError.
+Continue using ValueError for conflicts.
+```
+
+Claude nevertheless introduced `MergeConflictError`, which directly contradicted the requirement.
+
+There was also a functional problem with the proposed class:
+
+```python
+class MergeConflictError(Exception):
+```
+
+It inherited from `Exception`, not `ValueError`.
+
+Therefore, tests written as:
+
+```python
+with pytest.raises(ValueError):
+    repo.merge("feature")
+```
+
+would still fail.
+
+I rejected the new exception class and retained the useful conflict-detection algorithm.
+
+The AI-generated code:
+
+```python
+raise MergeConflictError(conflicts)
+```
+
+was changed to:
+
+```python
+conflicts.sort()
+
+raise ValueError(
+    f"Merge conflict detected in: {', '.join(conflicts)}"
+)
+```
+
+This satisfied both requirements:
+
+- the merge raises `ValueError`, and
+- the error message identifies all conflicting filenames.
+
+### Decision
+
+**Modified**
+
+This was an important example of why AI-generated code required human review rather than being copied directly.
+
+---
+
+## 6.10 Final Conflict-Detection Implementation
+
+The existing `merge()` method was replaced with a conflict-aware version.
+
+The implementation now obtains the commit histories of both branches:
+
+```python
+current_commits = self._commits[self.current_branch]
+source_commits = self._commits[source_branch]
+```
+
+It then obtains the commit IDs on each branch:
+
+```python
+current_ids = {
+    commit["id"] for commit in current_commits
+}
+
+source_ids = {
+    commit["id"] for commit in source_commits
+}
+```
+
+Post-divergence changes are calculated for both branches:
+
+```python
+our_changes = self._changes_since_divergence(
+    current_commits,
+    source_ids
+)
+
+their_changes = self._changes_since_divergence(
+    source_commits,
+    current_ids
+)
+```
+
+Conflicts are identified using:
+
+```python
+conflicts = [
+    filename
+    for filename, content in their_changes.items()
+    if filename in our_changes
+    and our_changes[filename] != content
+]
+```
+
+If conflicts exist, they are sorted and reported before any merge commit is created:
+
+```python
+if conflicts:
+    conflicts.sort()
+
+    raise ValueError(
+        f"Merge conflict detected in: {', '.join(conflicts)}"
+    )
+```
+
+Only when no conflicts exist is the merge commit created:
+
+```python
+self.commit(
+    f"Merge branch '{source_branch}'",
+    their_changes
+)
+```
+
+A private helper was added:
+
+```python
+@staticmethod
+def _changes_since_divergence(commits, other_ids):
+    """Return accumulated changes not shared with the other branch."""
+    changes = {}
+
+    for commit in commits:
+        if commit["id"] not in other_ids:
+            changes.update(commit["changes"])
+
+    return changes
+```
+
+The helper avoids duplicating the same change-accumulation logic for both branches.
+
+---
+
+## 6.11 Why Identical Changes Are Not Conflicts
+
+The conflict condition checks both filename presence and content:
+
+```python
+if filename in our_changes
+and our_changes[filename] != content
+```
+
+If both branches change:
+
+```text
+shared.txt
+```
+
+to:
+
+```text
+same
+```
+
+then:
+
+```python
+our_changes["shared.txt"] == their_changes["shared.txt"]
+```
+
+Therefore, no conflict is reported.
+
+This prevents false-positive conflicts when both branches independently arrive at the same result.
+
+---
+
+## 6.12 State Preservation
+
+Conflict detection happens before:
+
+```python
+self.commit(...)
+```
+
+Therefore, when a conflict is found:
+
+- no merge commit is created,
+- the current branch history remains unchanged,
+- the current branch head remains unchanged,
+- the source branch remains unchanged.
+
+This follows the validate-before-mutate strategy used throughout the project.
+
+The same testing pattern was used for invalid commits, invalid branch creation, failed checkout, failed merge, and conflicting merge operations.
+
+---
+
+## 6.13 GREEN Stage — Final Test Execution
+
+After modifying the AI-generated implementation, the complete test suite was executed again:
+
+```text
+python -m pytest -v
+```
+
+The result was:
+
+```text
+53 passed in 0.15s
+```
+
+All tests from Features 1–6 passed.
+
+### Result
+
+**GREEN — 53 passed**
+
+### Evidence
+
+`screenshots/12_conflict_green.png`
+
+This confirmed that conflict detection was added without introducing regressions into repository creation, commits, history, branching, checkout, or non-conflicting merge behaviour.
+
+---
+
+## 6.14 Limitation Identified During Review
+
+The final implementation uses commit-ID comparison to approximate divergence.
+
+It works correctly for the simplified branching scenarios covered by this project, but it is not a complete Git-style three-way merge algorithm.
+
+For example, a file could be changed and later changed back to its original value on one branch. The current implementation still records that filename as having been changed after divergence.
+
+The current model also does not support file deletion, so delete-versus-modify conflicts cannot be represented.
+
+These limitations are outside the defined MiniVCS scope but are possible future improvements.
+
+---
+
+## 6.15 Feature 6 Reflection
+
+Feature 6 provided one of the clearest examples of the value of both TDD and human review of AI-generated software.
+
+The Feature 5 implementation passed all forty-three existing tests but still silently allowed one branch's version of a conflicting file to overwrite the other branch's work.
+
+The new Feature 6 tests exposed this missing behaviour:
+
+```text
+6 failed, 47 passed
+```
+
+The AI then proposed a useful algorithm for comparing changes on both branches after divergence.
+
+However, the AI also ignored an explicit constraint and introduced `MergeConflictError` despite being instructed to continue using `ValueError`.
+
+Instead of copying the response directly, I reviewed and modified it. The useful conflict-detection algorithm was retained while the unnecessary exception class was removed.
+
+After the correction:
+
+```text
+53 passed in 0.15s
+```
+
+This demonstrates that AI was used as a development assistant rather than as an unquestioned source of code.
+
+The Feature 6 TDD cycle was:
+
+**Requirements → AI test design → Human review → 10 selected tests → RED (6 failed, 47 passed) → AI implementation → Human review → AI error identified → Implementation modified → GREEN (53 passed)**
+
+---
+
+# Stage 7 — Final Testing, Coverage and Reflection
+
+**Status:** Pending
+
+The next stage will include:
+
+- final regression testing,
+- test coverage measurement,
+- review of the complete source code,
+- review of the complete test suite,
+- identification of possible refactoring opportunities,
+- final GitHub repository check,
+- and final reflection on AI-assisted TDD.
 
 ---
 
