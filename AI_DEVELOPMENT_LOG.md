@@ -1501,17 +1501,516 @@ The Feature 3 TDD cycle was:
 
 ---
 
+## Feature 4 — Checkout
+
+### 4.37 Feature Description
+
+The fourth feature developed using TDD was branch checkout.
+
+The required behaviour was:
+
+- `checkout(branch_name)` switches the current branch to an existing branch.
+- The user can switch from `main` to another branch and back to `main`.
+- Checking out the current branch is allowed.
+- Checkout must not create, delete, or modify branches.
+- Checkout must preserve the target branch's commit history.
+- Commits created after checkout must be recorded on the currently checked-out branch.
+- Different branches must maintain independent commit histories.
+- Checking out a non-existent branch must raise `ValueError`.
+- A failed checkout must leave the current branch unchanged.
+- Checkout itself must not create commits or modify branch history.
+
+Merge and conflict detection were not implemented during this feature.
+
+---
+
+### 4.38 Initial AI Test-Design Prompt
+
+The following prompt was given to Claude before implementing Feature 4:
+
+> I am continuing AI-assisted Test-Driven Development for my Mini Version Control System.
+>
+> Feature 4 is Checkout.
+>
+> Existing functionality:
+> - A new repository starts with a single branch named "main".
+> - Commits can be created on the current branch.
+> - Commit history is returned oldest first.
+> - New branches can be created from the current branch.
+> - A newly created branch inherits the current branch's head and commit history.
+> - Creating a branch does not automatically switch the current branch.
+>
+> Requirements for Feature 4:
+> - checkout(branch_name) must switch the current branch to an existing branch.
+> - Checking out "main" or another existing branch must update current_branch.
+> - Checking out a non-existent branch must raise ValueError.
+> - If checkout fails, current_branch must remain unchanged.
+> - Checking out a branch must preserve that branch's own commit history.
+> - Commits made after checkout must be recorded only on the currently checked-out branch.
+> - Switching between branches must preserve each branch's independent history.
+> - Checkout itself must not create a commit or modify branch history.
+>
+> Generate ONLY the pytest unit-test design for this feature.
+>
+> For each test, include:
+> 1. Test name
+> 2. What it checks
+> 3. Why it is necessary
+>
+> Include:
+> - normal cases
+> - boundary cases
+> - invalid cases
+> - regression-relevant cases
+>
+> Do not write implementation code.
+> Do not write the checkout method.
+> Do not design tests for merge or conflict detection.
+> Do not add get_files().
+> Do not add optional parameters to history().
+> Do not invent new public APIs unless clearly required by the existing specification.
+> Keep the response concise.
+
+---
+
+### 4.39 AI Test-Design Response Summary
+
+Claude proposed thirteen checkout tests:
+
+1. `test_checkout_switches_current_branch`
+2. `test_can_checkout_back_to_main`
+3. `test_checkout_does_not_change_branch_count`
+4. `test_checkout_preserves_history_of_the_target_branch`
+5. `test_commit_after_checkout_is_recorded_on_the_new_branch`
+6. `test_commit_after_checkout_does_not_affect_the_other_branch`
+7. `test_branches_keep_separate_histories_across_multiple_switches`
+8. `test_checkout_current_branch_is_allowed`
+9. `test_checkout_branch_with_no_commits`
+10. `test_checkout_of_nonexistent_branch_is_rejected`
+11. `test_checkout_of_empty_branch_name_is_rejected`
+12. `test_failed_checkout_leaves_current_branch_unchanged`
+13. `test_failed_checkout_leaves_history_intact`
+
+Claude identified `test_commit_after_checkout_does_not_affect_the_other_branch` as particularly important because it could expose a mutable-list aliasing problem from branch creation.
+
+It also highlighted the recurring testing pattern of validating input before changing repository state.
+
+---
+
+### 4.40 My Evaluation of the AI-Generated Tests
+
+I reviewed the thirteen proposed tests before adding them to the test suite.
+
+I accepted tests covering:
+
+- Switching to an existing branch.
+- Returning to `main`.
+- Preserving the target branch's history.
+- Recording commits on the checked-out branch.
+- Keeping commits isolated between branches.
+- Maintaining separate histories across multiple branch switches.
+- Checking out the current branch.
+- Checking out a branch with no commits.
+- Rejecting a non-existent branch.
+- Keeping `current_branch` unchanged after a failed checkout.
+
+I modified the proposed branch-count test. Instead of only checking that the number of branches remained the same, I stored a copy of the complete `branches` dictionary before checkout and compared it afterward:
+
+```python
+branches_before = dict(repo.branches)
+repo.checkout("feature")
+assert repo.branches == branches_before
+```
+
+This provides stronger evidence that checkout does not modify branch state.
+
+I did not include a separate empty-name checkout test because an empty string is already a non-existent branch and is therefore covered by the existing invalid-branch behaviour.
+
+I also did not include a separate failed-checkout-history test because the selected tests already verify that checkout does not modify branches and that failed checkout leaves the selected branch unchanged.
+
+### Decision
+
+**Modified**
+
+Claude proposed thirteen tests. After reviewing overlap and test value, eleven tests were selected or modified for Feature 4.
+
+---
+
+### 4.41 Initial Automated Tests
+
+The following eleven tests were added to `tests/test_mini_vcs.py` before implementing `checkout()`:
+
+```python
+def test_checkout_switches_current_branch():
+    repo = Repository()
+    repo.create_branch("feature")
+
+    repo.checkout("feature")
+
+    assert repo.current_branch == "feature"
+
+
+def test_can_checkout_back_to_main():
+    repo = Repository()
+    repo.create_branch("feature")
+
+    repo.checkout("feature")
+    repo.checkout("main")
+
+    assert repo.current_branch == "main"
+
+
+def test_checkout_does_not_modify_branches():
+    repo = Repository()
+    repo.create_branch("feature")
+    branches_before = dict(repo.branches)
+
+    repo.checkout("feature")
+
+    assert repo.branches == branches_before
+
+
+def test_checkout_preserves_history_of_target_branch():
+    repo = Repository()
+
+    repo.commit("First", {"a.txt": "A"})
+    repo.commit("Second", {"b.txt": "B"})
+    repo.create_branch("feature")
+
+    repo.checkout("feature")
+
+    messages = [commit["message"] for commit in repo.history()]
+
+    assert messages == ["First", "Second"]
+
+
+def test_commit_after_checkout_is_recorded_on_new_branch():
+    repo = Repository()
+    repo.create_branch("feature")
+    repo.checkout("feature")
+
+    repo.commit("Feature work", {"feature.txt": "data"})
+
+    assert repo.history()[-1]["message"] == "Feature work"
+
+
+def test_commit_after_checkout_does_not_affect_other_branch():
+    repo = Repository()
+
+    repo.commit("Base", {"base.txt": "A"})
+    repo.create_branch("feature")
+
+    repo.checkout("feature")
+    repo.commit("Feature work", {"feature.txt": "B"})
+
+    repo.checkout("main")
+
+    messages = [commit["message"] for commit in repo.history()]
+
+    assert messages == ["Base"]
+
+
+def test_branches_keep_separate_histories_across_switches():
+    repo = Repository()
+
+    repo.commit("Base", {"base.txt": "A"})
+    repo.create_branch("feature")
+
+    repo.checkout("feature")
+    repo.commit("Feature work", {"feature.txt": "B"})
+
+    repo.checkout("main")
+    repo.commit("Main work", {"main.txt": "C"})
+
+    main_messages = [commit["message"] for commit in repo.history()]
+
+    repo.checkout("feature")
+    feature_messages = [commit["message"] for commit in repo.history()]
+
+    assert main_messages == ["Base", "Main work"]
+    assert feature_messages == ["Base", "Feature work"]
+
+
+def test_checkout_current_branch_is_allowed():
+    repo = Repository()
+
+    repo.checkout("main")
+
+    assert repo.current_branch == "main"
+
+
+def test_checkout_branch_with_no_commits():
+    repo = Repository()
+    repo.create_branch("feature")
+
+    repo.checkout("feature")
+
+    assert repo.history() == []
+
+
+def test_checkout_of_nonexistent_branch_is_rejected():
+    repo = Repository()
+
+    with pytest.raises(ValueError):
+        repo.checkout("does_not_exist")
+
+
+def test_failed_checkout_leaves_current_branch_unchanged():
+    repo = Repository()
+
+    with pytest.raises(ValueError):
+        repo.checkout("does_not_exist")
+
+    assert repo.current_branch == "main"
+```
+
+The twenty-three tests from Features 1, 2, and 3 remained in the suite as regression tests.
+
+---
+
+### 4.42 RED Stage — Initial Test Execution
+
+Before implementing `checkout()`, the complete test suite was executed using:
+
+```text
+python -m pytest -v
+```
+
+Pytest collected thirty-four tests.
+
+All twenty-three existing tests passed, while the eleven new Feature 4 tests failed.
+
+The main failure was:
+
+```text
+AttributeError: 'Repository' object has no attribute 'checkout'
+```
+
+The result was:
+
+```text
+11 failed, 23 passed
+```
+
+This was the expected RED stage because the checkout tests were written and executed before the checkout method existed.
+
+The twenty-three existing tests continuing to pass confirmed that repository creation, commits, history, and branch creation remained functional.
+
+### Result
+
+**RED — 11 failed, 23 passed**
+
+### Evidence
+
+`screenshots/07_checkout_red.png`
+
+---
+
+### 4.43 AI Implementation Prompt
+
+After recording the RED result, the following prompt was given to Claude:
+
+> I am following AI-assisted Test-Driven Development for my Mini Version Control System.
+>
+> I am now implementing Feature 4: Checkout.
+>
+> The 11 Feature 4 pytest tests already exist and were executed before implementation.
+>
+> Current test result:
+>
+> 11 failed, 23 passed.
+>
+> All 23 existing Feature 1, Feature 2, and Feature 3 tests still pass.
+>
+> The 11 new Feature 4 tests fail because:
+>
+> AttributeError: 'Repository' object has no attribute 'checkout'
+>
+> Please provide the smallest Python implementation necessary to make these Feature 4 tests pass while keeping all 23 existing tests passing.
+>
+> Requirements:
+> - checkout(branch_name) must switch current_branch to an existing branch.
+> - It must be possible to switch from main to another branch and back to main.
+> - Checking out the current branch is allowed and should behave as a no-op.
+> - Checking out a branch must not create, delete, or otherwise modify branches.
+> - Existing branch history must remain unchanged by checkout.
+> - Commits after checkout must be recorded only on the checked-out branch.
+> - Different branches must maintain independent histories.
+> - Checking out a non-existent branch must raise ValueError.
+> - A failed checkout must leave current_branch unchanged.
+> - Do not implement merge or conflict detection yet.
+> - Do not add get_files().
+> - Do not add optional parameters to history().
+> - Do not introduce new public APIs that are not required by these tests.
+> - Keep the implementation small and readable.
+>
+> Important:
+> The existing Repository implementation already contains:
+> - self._commits
+> - self.branches
+> - self.current_branch
+> - self._counter
+> - commit()
+> - history()
+> - create_branch()
+>
+> Do not unnecessarily rewrite the working Feature 1, Feature 2, or Feature 3 functionality.
+>
+> Also briefly explain:
+> 1. What you changed.
+> 2. Why each change is necessary.
+> 3. Any assumptions you made.
+> 4. Whether any part of the proposed implementation goes beyond the current tests.
+>
+> Do not add functionality beyond what is required by the existing tests.
+
+---
+
+### 4.44 AI Implementation Response Summary
+
+Claude proposed adding one small `checkout()` method:
+
+```python
+def checkout(self, name):
+    """Switch the current branch to an existing branch."""
+    if name not in self.branches:
+        raise ValueError(f"Branch '{name}' does not exist")
+
+    self.current_branch = name
+    return name
+```
+
+The AI explained that validation must happen before changing `current_branch`. This ensures that a failed checkout does not leave the repository pointing to a branch that does not exist.
+
+Claude also explained that no special case is required for checking out the branch that is already current. Assigning the same branch name again naturally behaves as a no-op.
+
+The AI did not add type validation because dictionary membership checking already handles values that are not existing branch keys.
+
+Claude identified `return name` as behaviour that was not required by any current test.
+
+---
+
+### 4.45 My Evaluation of the AI Implementation
+
+The proposed implementation was appropriately small and closely matched the current Feature 4 requirements.
+
+I accepted:
+
+```python
+if name not in self.branches:
+    raise ValueError(f"Branch '{name}' does not exist")
+```
+
+The validation occurs before any state change. This is important because assigning `current_branch` before validation could leave the repository in an invalid state even though an exception was raised.
+
+I also accepted:
+
+```python
+self.current_branch = name
+```
+
+No other repository state needs to change during checkout. The existing `commit()` and `history()` methods already use `current_branch`, so switching this value automatically redirects later operations to the selected branch.
+
+Claude also proposed:
+
+```python
+return name
+```
+
+No requirement or Feature 4 test defines a return value for `checkout()`. I therefore removed this line to keep the implementation limited to tested behaviour.
+
+### Decision
+
+**Modified**
+
+The core AI-generated implementation was accepted, but the unnecessary return value was removed.
+
+---
+
+### 4.46 Final Feature 4 Implementation
+
+The following method was added to the existing `Repository` class:
+
+```python
+def checkout(self, name):
+    """Switch the current branch to an existing branch."""
+    if name not in self.branches:
+        raise ValueError(f"Branch '{name}' does not exist")
+
+    self.current_branch = name
+```
+
+No existing Feature 1, Feature 2, or Feature 3 implementation was changed.
+
+---
+
+### 4.47 GREEN Stage — Test Execution
+
+After adding the reviewed `checkout()` implementation, the complete test suite was executed again:
+
+```text
+python -m pytest -v
+```
+
+All thirty-four tests passed:
+
+```text
+34 passed in 0.13s
+```
+
+This included:
+
+- 4 Feature 1 repository-creation tests
+- 8 Feature 2 commit/history tests
+- 11 Feature 3 branching tests
+- 11 Feature 4 checkout tests
+
+The successful execution of all previous tests confirmed that checkout functionality did not introduce regressions into repository creation, commits, history, or branch creation.
+
+### Result
+
+**GREEN — 34 passed**
+
+### Evidence
+
+`screenshots/08_checkout_green.png`
+
+---
+
+### 4.48 Feature 4 Reflection
+
+Feature 4 demonstrated how a small implementation can still require meaningful test design.
+
+The final `checkout()` implementation only validates the requested branch and changes `current_branch`. However, the tests verify more than this direct behaviour. They confirm that branch histories remain independent, checkout does not modify the branch structure, commits are redirected to the selected branch, invalid checkout attempts do not change state, and switching repeatedly between branches preserves their histories.
+
+An important regression test was:
+
+```python
+test_commit_after_checkout_does_not_affect_other_branch
+```
+
+This test also provided stronger evidence that the `list()` copy introduced during Feature 3 branch creation was necessary. If two branches shared the same mutable commit-history list, a commit on the checked-out feature branch could incorrectly appear in `main`.
+
+The AI implementation was mostly appropriate, but it returned the branch name even though no current requirement or test required a return value. Removing this line kept the implementation aligned with the TDD principle of adding only currently required behaviour.
+
+A recurring testing strategy is now visible across multiple features: **validate before mutating repository state**. Tests for rejected commits, rejected branch creation, and failed checkout all verify that invalid operations do not partially modify the repository.
+
+The Feature 4 TDD cycle was:
+
+**Requirements → AI test design → Human review → 11 selected/modified tests → RED (11 failed, 23 passed) → AI implementation → Human review/modification → GREEN (34 passed) → Regression confirmed**
+
+---
+
 # Stage 5 — Remaining Feature Development
 
 **Status:** In progress.
 
 The same AI-assisted TDD process will be followed for the remaining features:
 
-- Feature 4 — Checkout
 - Feature 5 — Merge
 - Feature 6 — Conflict Detection
 
-For each feature, this log will record the exact AI prompt, AI response summary, my evaluation, accepted/modified/rejected decisions, RED test result, implementation review, GREEN result, and evidence.
+For each feature, this log will record the AI prompt, AI response summary, my evaluation, accepted/modified/rejected decisions, RED test result, implementation review, GREEN result, and evidence.
 ---
 
 # Stage 6 — Evaluation and Improvement of AI Output
