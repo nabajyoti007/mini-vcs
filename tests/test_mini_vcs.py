@@ -96,3 +96,101 @@ def test_rejected_commit_leaves_history_unchanged():
         repo.commit("   ", {})
 
     assert len(repo.history()) == 1
+
+# Feature 3: Branching
+
+def test_branch_can_be_created():
+    repo = Repository()
+
+    repo.create_branch("feature")
+
+    assert "feature" in repo.branches
+
+
+def test_branch_count_increases_by_one():
+    repo = Repository()
+
+    repo.create_branch("feature")
+
+    assert len(repo.branches) == 2
+    assert "main" in repo.branches
+
+
+def test_new_branch_inherits_current_head():
+    repo = Repository()
+
+    repo.commit("First commit", {"file.txt": "Hello"})
+    repo.create_branch("feature")
+
+    assert repo.branches["feature"] == repo.branches["main"]
+
+
+def test_creating_a_branch_does_not_switch_to_it():
+    repo = Repository()
+
+    repo.create_branch("feature")
+
+    assert repo.current_branch == "main"
+
+
+def test_branch_created_before_any_commit_has_no_head():
+    repo = Repository()
+
+    repo.create_branch("feature")
+
+    assert repo.branches["feature"] is None
+
+
+def test_single_character_branch_name_is_accepted():
+    repo = Repository()
+
+    repo.create_branch("f")
+
+    assert "f" in repo.branches
+
+
+def test_empty_branch_name_is_rejected():
+    repo = Repository()
+
+    with pytest.raises(ValueError):
+        repo.create_branch("")
+
+
+def test_whitespace_only_branch_name_is_rejected():
+    repo = Repository()
+
+    with pytest.raises(ValueError):
+        repo.create_branch("   ")
+
+
+def test_duplicate_branch_name_is_rejected():
+    repo = Repository()
+
+    repo.create_branch("feature")
+
+    with pytest.raises(ValueError):
+        repo.create_branch("feature")
+
+
+def test_rejected_branch_creation_leaves_branches_unchanged():
+    repo = Repository()
+
+    repo.create_branch("feature")
+    branches_before = dict(repo.branches)
+
+    with pytest.raises(ValueError):
+        repo.create_branch("feature")
+
+    assert repo.branches == branches_before
+
+
+def test_branch_head_is_independent_after_creation():
+    repo = Repository()
+
+    first_id = repo.commit("First commit", {"file.txt": "Hello"})
+    repo.create_branch("feature")
+
+    repo.commit("Second commit", {"other.txt": "World"})
+
+    assert repo.branches["feature"] == first_id
+    assert repo.branches["main"] != repo.branches["feature"]
