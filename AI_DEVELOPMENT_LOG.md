@@ -3301,3 +3301,148 @@ The final project completed all six required MiniVCS features with:
 - **100% statement coverage**
 
 The most important lesson from the project was that AI output should be treated as a proposal that must be tested, reviewed, and justified rather than as automatically correct software.
+
+---
+
+## Stage 7 – Final Testing and Verification
+
+### Final Regression Testing
+
+After completing all six major features and adding the final boundary tests, I executed the complete automated test suite to verify that all functionality continued to work correctly.
+
+### Command Used
+
+```bash
+python -m pytest -v
+```
+
+### Result
+
+- **55 tests collected**
+- **55 tests passed**
+- **0 tests failed**
+
+The final regression test confirmed that the additional tests did not break any previously implemented functionality.
+
+The final test suite covers:
+
+- Repository creation
+- Commit creation and commit history
+- Branch creation
+- Checkout
+- Merge
+- Conflict detection
+- Invalid input handling
+- Boundary conditions
+- State preservation
+- Regression scenarios
+
+Two additional boundary tests were included for commit messages:
+
+- A long commit message of 1000 characters is accepted.
+- A valid commit message containing surrounding whitespace is accepted and preserved.
+
+### Decision
+
+**Accepted**
+
+All 55 automated tests passed successfully.
+
+### Evidence
+
+- Command: `python -m pytest -v`
+- Result: **55 passed**
+- Screenshot: `15_final_55_tests.png`
+
+---
+
+## Final Code Coverage Verification
+
+After confirming that the complete test suite passed, I performed a final coverage analysis using `pytest-cov`.
+
+### Command Used
+
+```bash
+python -m pytest --cov=src --cov-report=term-missing
+```
+
+### Coverage Result
+
+| File | Statements | Missing | Coverage |
+|---|---:|---:|---:|
+| `src/__init__.py` | 0 | 0 | 100% |
+| `src/mini_vcs.py` | 53 | 0 | 100% |
+| **TOTAL** | **53** | **0** | **100%** |
+
+The coverage run also executed the complete test suite:
+
+- **55 tests passed**
+- **0 tests failed**
+- **53 statements tested**
+- **0 statements missing**
+- **100% statement coverage**
+
+### Evaluation
+
+The final implementation achieved 100% statement coverage. However, I understand that code coverage alone does not guarantee that software is completely free from defects.
+
+Therefore, I did not rely only on the coverage percentage. The tests were designed from the specification and included:
+
+- Normal behaviour
+- Boundary conditions
+- Invalid inputs
+- Exceptional situations
+- State-preservation checks
+- Regression tests
+- Merge conflict scenarios
+
+This provided stronger evidence of correctness than code coverage alone.
+
+### Decision
+
+**Accepted**
+
+The final implementation satisfies the defined project scope, all automated tests pass, and all executable statements in the source code are covered by the test suite.
+
+### Evidence
+
+- Command: `python -m pytest --cov=src --cov-report=term-missing`
+- Tests: **55 passed**
+- Coverage: **100%**
+- Missing statements: **0**
+- Screenshot: `16_final_coverage_100_percent.png`
+
+---
+
+## Final Development Status
+
+The AI-assisted TDD development process is now complete.
+
+The project was developed incrementally through RED → GREEN cycles:
+
+1. Repository Creation
+2. Commit and History
+3. Branching
+4. Checkout
+5. Merge
+6. Conflict Detection
+7. Final Boundary and Regression Testing
+
+AI-generated suggestions were not accepted automatically. They were reviewed against the specification and existing implementation. Some suggestions were modified or rejected when they introduced unnecessary APIs, additional scope, or assumptions not supported by the requirements.
+
+A significant example occurred during merge development. The initial merge implementation passed the Feature 5 tests but did not detect situations where both branches modified the same file differently. Feature 6 tests exposed this limitation, resulting in the merge algorithm being improved to compare changes from both branches before modifying repository state.
+
+This demonstrated an important lesson from the TDD process: passing the current test suite does not necessarily mean an implementation is complete. New requirements and carefully designed tests can expose behaviours that earlier tests did not cover.
+
+### Final Result
+
+- **55 automated tests passed**
+- **100% statement coverage**
+- **6 required MiniVCS features implemented**
+- **Normal, boundary, invalid, conflict, and regression scenarios tested**
+- **AI outputs critically reviewed and modified where necessary**
+- **RED → GREEN TDD evidence recorded throughout development**
+
+### Overall Decision
+
+**Accepted – Final implementation ready for report preparation.**
