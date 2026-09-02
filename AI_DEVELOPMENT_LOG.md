@@ -949,19 +949,569 @@ Feature 2 successfully completed the TDD cycle:
 
 ---
 
+## Feature 3 — Branching
+
+### 4.25 Feature Description
+
+The third feature developed using TDD was branch creation.
+
+The required behaviour was:
+
+- A new branch can be created from the current branch.
+- The new branch inherits the current branch's head at the time of creation.
+- Creating a branch does not automatically switch the current branch.
+- A branch can be created before any commits exist.
+- Empty branch names are rejected.
+- Whitespace-only branch names are rejected.
+- Duplicate branch names are rejected.
+- A rejected branch creation must not modify existing branch state.
+- Branch state must remain independent after creation.
+
+Checkout, merge, and conflict detection were not implemented during this feature.
+
+---
+
+### 4.26 Initial AI Test-Design Prompt
+
+The following prompt was given to Claude before implementing Feature 3:
+
+> I am continuing AI-assisted Test-Driven Development for my Mini Version Control System.
+>
+> Feature 3 is Branching.
+>
+> Existing functionality:
+> - A new repository starts with a single branch named "main".
+> - "main" is the current branch.
+> - Commits can be created on the current branch.
+> - Commit history is returned oldest first.
+> - Each commit has a unique identifier.
+>
+> Requirements for Feature 3:
+> - A new branch must be created from the current branch.
+> - The new branch must inherit the current branch's existing commit history.
+> - The new branch must inherit the current branch's current state at the time it is created.
+> - Creating a branch must not automatically switch the current branch.
+> - An empty branch name must be rejected.
+> - A whitespace-only branch name must be rejected.
+> - A duplicate branch name must be rejected.
+> - A rejected branch creation must not modify the existing repository state.
+>
+> Generate ONLY the pytest unit-test design for this feature.
+>
+> For each test, include:
+> 1. Test name
+> 2. What it checks
+> 3. Why it is necessary
+>
+> Include:
+> - normal cases
+> - boundary cases
+> - invalid cases
+> - regression-relevant cases
+>
+> Do not write implementation code.
+> Do not write the branch creation method.
+> Do not design tests for checkout, merge, or conflict detection.
+> Do not invent new public APIs unless they are clearly necessary from the existing specification.
+> Keep the response concise.
+
+---
+
+### 4.27 AI Test-Design Response Summary
+
+Claude proposed thirteen tests:
+
+1. `test_branch_can_be_created`
+2. `test_branch_count_increases_by_one`
+3. `test_new_branch_inherits_commit_history`
+4. `test_new_branch_inherits_current_file_state`
+5. `test_creating_a_branch_does_not_switch_to_it`
+6. `test_branch_created_from_empty_repository_has_no_commits`
+7. `test_single_character_branch_name_is_accepted`
+8. `test_empty_branch_name_is_rejected`
+9. `test_whitespace_only_branch_name_is_rejected`
+10. `test_duplicate_branch_name_is_rejected`
+11. `test_creating_a_branch_named_main_is_rejected`
+12. `test_rejected_branch_creation_leaves_branches_unchanged`
+13. `test_branches_are_independent_after_creation`
+
+Claude also suggested changing `history()` to support an optional branch parameter and again suggested using `get_files()` so that a branch other than the current branch could be inspected.
+
+Claude highlighted a possible Python list-aliasing problem if two branches shared the same commit-history list.
+
+---
+
+### 4.28 My Evaluation of the AI-Generated Tests
+
+I reviewed the proposed tests before adding them to the project.
+
+I accepted the tests covering:
+
+- Successful branch creation.
+- Branch count increasing without removing `main`.
+- Creating a branch without automatically switching to it.
+- Creating a branch before any commits exist.
+- A single-character branch name.
+- Empty branch-name rejection.
+- Whitespace-only branch-name rejection.
+- Duplicate branch-name rejection.
+- Repository state remaining unchanged after rejected branch creation.
+
+Some tests required modification.
+
+Claude proposed testing inherited commit history by changing the existing `history()` API to accept a branch name. I decided not to expand the public API only to make a test easier to write.
+
+Instead, I modified this behaviour to verify that a newly created branch receives the same head commit identifier as the current branch:
+
+```python
+assert repo.branches["feature"] == repo.branches["main"]
+```
+
+Claude's branch-independence test also required inspecting another branch's history. I modified it to test independence using branch head identifiers. After creating a branch and making another commit on `main`, the new `main` head must differ from the unchanged `feature` head.
+
+I did not use the proposed file-state inheritance test because it again depended on a `get_files()` API that was not defined in the current specification.
+
+I also did not include a separate test for creating a branch named `main`. The existing duplicate-name test already verifies the general rule that an existing branch name cannot be created again.
+
+### Decision
+
+**Modified**
+
+Claude proposed thirteen tests. After reviewing API assumptions, overlap, and project scope, eleven tests were selected or modified for Feature 3.
+
+---
+
+### 4.29 Initial Automated Tests
+
+The following eleven tests were added to `tests/test_mini_vcs.py` before implementing `create_branch()`:
+
+```python
+def test_branch_can_be_created():
+    repo = Repository()
+
+    repo.create_branch("feature")
+
+    assert "feature" in repo.branches
+
+
+def test_branch_count_increases_by_one():
+    repo = Repository()
+
+    repo.create_branch("feature")
+
+    assert len(repo.branches) == 2
+    assert "main" in repo.branches
+
+
+def test_new_branch_inherits_current_head():
+    repo = Repository()
+
+    repo.commit("First commit", {"file.txt": "Hello"})
+    repo.create_branch("feature")
+
+    assert repo.branches["feature"] == repo.branches["main"]
+
+
+def test_creating_a_branch_does_not_switch_to_it():
+    repo = Repository()
+
+    repo.create_branch("feature")
+
+    assert repo.current_branch == "main"
+
+
+def test_branch_created_before_any_commit_has_no_head():
+    repo = Repository()
+
+    repo.create_branch("feature")
+
+    assert repo.branches["feature"] is None
+
+
+def test_single_character_branch_name_is_accepted():
+    repo = Repository()
+
+    repo.create_branch("f")
+
+    assert "f" in repo.branches
+
+
+def test_empty_branch_name_is_rejected():
+    repo = Repository()
+
+    with pytest.raises(ValueError):
+        repo.create_branch("")
+
+
+def test_whitespace_only_branch_name_is_rejected():
+    repo = Repository()
+
+    with pytest.raises(ValueError):
+        repo.create_branch("   ")
+
+
+def test_duplicate_branch_name_is_rejected():
+    repo = Repository()
+
+    repo.create_branch("feature")
+
+    with pytest.raises(ValueError):
+        repo.create_branch("feature")
+
+
+def test_rejected_branch_creation_leaves_branches_unchanged():
+    repo = Repository()
+
+    repo.create_branch("feature")
+    branches_before = dict(repo.branches)
+
+    with pytest.raises(ValueError):
+        repo.create_branch("feature")
+
+    assert repo.branches == branches_before
+
+
+def test_branch_head_is_independent_after_creation():
+    repo = Repository()
+
+    first_id = repo.commit("First commit", {"file.txt": "Hello"})
+    repo.create_branch("feature")
+
+    repo.commit("Second commit", {"other.txt": "World"})
+
+    assert repo.branches["feature"] == first_id
+    assert repo.branches["main"] != repo.branches["feature"]
+```
+
+The twelve existing Feature 1 and Feature 2 tests remained unchanged and continued to act as regression tests.
+
+---
+
+### 4.30 RED Stage — Initial Test Execution
+
+Before implementing `create_branch()`, the complete automated test suite was executed using:
+
+```text
+python -m pytest -v
+```
+
+Pytest collected twenty-three tests.
+
+The twelve existing tests from Features 1 and 2 passed, while all eleven new Feature 3 tests failed.
+
+The main failure was:
+
+```text
+AttributeError: 'Repository' object has no attribute 'create_branch'
+```
+
+The result was:
+
+```text
+11 failed, 12 passed
+```
+
+This was the expected RED stage because the branching tests were written and executed before `create_branch()` was implemented.
+
+The twelve existing tests continuing to pass confirmed that the previously implemented repository and commit functionality had not been affected.
+
+### Result
+
+**RED — 11 failed, 12 passed**
+
+### Evidence
+
+`screenshots/05_branching_red.png`
+
+---
+
+### 4.31 AI Implementation Prompt
+
+After recording the RED result, the following prompt was given to Claude:
+
+> I am following AI-assisted Test-Driven Development for my Mini Version Control System.
+>
+> I am now implementing Feature 3: Branching.
+>
+> The following 11 pytest tests already exist and were executed before implementation:
+>
+> ```python
+> def test_branch_can_be_created():
+>     repo = Repository()
+>     repo.create_branch("feature")
+>     assert "feature" in repo.branches
+>
+>
+> def test_branch_count_increases_by_one():
+>     repo = Repository()
+>     repo.create_branch("feature")
+>     assert len(repo.branches) == 2
+>     assert "main" in repo.branches
+>
+>
+> def test_new_branch_inherits_current_head():
+>     repo = Repository()
+>     repo.commit("First commit", {"file.txt": "Hello"})
+>     repo.create_branch("feature")
+>     assert repo.branches["feature"] == repo.branches["main"]
+>
+>
+> def test_creating_a_branch_does_not_switch_to_it():
+>     repo = Repository()
+>     repo.create_branch("feature")
+>     assert repo.current_branch == "main"
+>
+>
+> def test_branch_created_before_any_commit_has_no_head():
+>     repo = Repository()
+>     repo.create_branch("feature")
+>     assert repo.branches["feature"] is None
+>
+>
+> def test_single_character_branch_name_is_accepted():
+>     repo = Repository()
+>     repo.create_branch("f")
+>     assert "f" in repo.branches
+>
+>
+> def test_empty_branch_name_is_rejected():
+>     repo = Repository()
+>     with pytest.raises(ValueError):
+>         repo.create_branch("")
+>
+>
+> def test_whitespace_only_branch_name_is_rejected():
+>     repo = Repository()
+>     with pytest.raises(ValueError):
+>         repo.create_branch("   ")
+>
+>
+> def test_duplicate_branch_name_is_rejected():
+>     repo = Repository()
+>     repo.create_branch("feature")
+>     with pytest.raises(ValueError):
+>         repo.create_branch("feature")
+>
+>
+> def test_rejected_branch_creation_leaves_branches_unchanged():
+>     repo = Repository()
+>     repo.create_branch("feature")
+>     branches_before = dict(repo.branches)
+>
+>     with pytest.raises(ValueError):
+>         repo.create_branch("feature")
+>
+>     assert repo.branches == branches_before
+>
+>
+> def test_branch_head_is_independent_after_creation():
+>     repo = Repository()
+>     first_id = repo.commit("First commit", {"file.txt": "Hello"})
+>     repo.create_branch("feature")
+>
+>     repo.commit("Second commit", {"other.txt": "World"})
+>
+>     assert repo.branches["feature"] == first_id
+>     assert repo.branches["main"] != repo.branches["feature"]
+> ```
+>
+> Current test result:
+>
+> 11 failed, 12 passed.
+>
+> All 12 existing Feature 1 and Feature 2 tests still pass.
+>
+> The 11 new Feature 3 tests fail because:
+>
+> AttributeError: 'Repository' object has no attribute 'create_branch'
+>
+> Please provide the smallest Python implementation necessary to make these Feature 3 tests pass while keeping all 12 existing tests passing.
+>
+> Requirements:
+> - A new branch is created from the current branch.
+> - The new branch must inherit the current branch's current head.
+> - Creating a branch must not automatically switch the current branch.
+> - A branch created before any commits must have no head.
+> - Empty branch names must raise ValueError.
+> - Whitespace-only branch names must raise ValueError.
+> - Duplicate branch names must raise ValueError.
+> - Rejected branch creation must not modify existing branch state.
+> - Branch state must be independent after creation.
+> - Do not implement checkout, merge, or conflict detection yet.
+> - Do not add get_files().
+> - Do not add an optional branch parameter to history().
+> - Do not introduce new public APIs that are not required by these tests.
+> - Keep the implementation small and readable.
+>
+> Important:
+> The existing Repository implementation already has:
+> - self._commits
+> - self.branches
+> - self.current_branch
+> - self._counter
+> - commit()
+> - history()
+>
+> Do not unnecessarily rewrite working Feature 1 or Feature 2 functionality.
+>
+> Also briefly explain:
+> 1. What you changed
+> 2. Why each change is necessary
+> 3. Any assumptions you made
+> 4. Whether any part of your proposed implementation goes beyond the current tests
+>
+> Do not add functionality beyond what is required by the existing tests.
+
+---
+
+### 4.32 AI Implementation Response Summary
+
+Claude proposed adding a single `create_branch()` method to the existing `Repository` class.
+
+The proposed method:
+
+- Checked whether the branch name was a string.
+- Rejected empty and whitespace-only branch names.
+- Rejected duplicate branch names.
+- Copied the current branch's head commit ID to the new branch.
+- Copied the current branch's commit-history list using `list()`.
+- Returned the new branch name.
+
+Claude correctly pointed out that directly assigning the existing commit-history list would cause both branches to share the same Python list object.
+
+Claude also acknowledged that its explicit `TypeError` for non-string branch names went beyond the current tests.
+
+---
+
+### 4.33 My Evaluation of the AI Implementation
+
+I accepted most of Claude's proposed branching implementation because it was small and directly related to the current Feature 3 requirements.
+
+The validation for empty, whitespace-only, and duplicate branch names was accepted.
+
+I also accepted:
+
+```python
+self.branches[name] = self.branches[self.current_branch]
+```
+
+This gives the newly created branch the same head commit as the current branch at the moment of creation.
+
+An important part of the AI response was:
+
+```python
+self._commits[name] = list(self._commits[self.current_branch])
+```
+
+Using `list()` creates a separate commit-history list for the new branch. Without the copy, both branch names could reference the same mutable list. Later commits could then incorrectly appear in both branches.
+
+However, Claude also proposed:
+
+```python
+if not isinstance(name, str):
+    raise TypeError("Branch name must be a string")
+```
+
+No current specification requirement or Feature 3 test defines behaviour for non-string branch names. I therefore removed this additional validation rather than introducing untested behaviour.
+
+Claude also referred again to `get_files()` from its earlier design, but this API was not added because it was not part of the reviewed implementation.
+
+### Decision
+
+**Modified**
+
+The main branching implementation was accepted, but the unnecessary non-string `TypeError` validation was removed.
+
+---
+
+### 4.34 Final Feature 3 Implementation
+
+The following method was added to the existing `Repository` class:
+
+```python
+def create_branch(self, name):
+    """Create a branch starting from the current branch's head."""
+    if not name.strip():
+        raise ValueError("Branch name cannot be empty")
+
+    if name in self.branches:
+        raise ValueError(f"Branch '{name}' already exists")
+
+    self.branches[name] = self.branches[self.current_branch]
+    self._commits[name] = list(self._commits[self.current_branch])
+
+    return name
+```
+
+The existing Feature 1 and Feature 2 implementation was kept unchanged.
+
+---
+
+### 4.35 GREEN Stage — Test Execution
+
+After adding the reviewed `create_branch()` implementation, the complete test suite was executed again:
+
+```text
+python -m pytest -v
+```
+
+Pytest collected twenty-three tests and all twenty-three passed:
+
+```text
+23 passed
+```
+
+This included:
+
+- 4 Feature 1 repository-creation tests
+- 8 Feature 2 commit/history tests
+- 11 Feature 3 branching tests
+
+The successful execution of all previous tests confirmed that the new branching implementation did not introduce regressions into the earlier functionality.
+
+### Result
+
+**GREEN — 23 passed**
+
+### Evidence
+
+`screenshots/06_branching_green.png`
+
+---
+
+### 4.36 Feature 3 Reflection
+
+Feature 3 showed another example of why AI-generated test and implementation designs need human review.
+
+Claude correctly identified important branching risks, particularly the possibility of a Python aliasing bug when copying a mutable commit-history list. Its use of:
+
+```python
+list(self._commits[self.current_branch])
+```
+
+helped ensure that the new branch received an independent history list.
+
+However, the AI also attempted to expand the existing public API during test design by suggesting an optional branch parameter for `history()` and again referring to `get_files()`. These additions were not necessary for the current feature and were rejected.
+
+The implementation response also introduced non-string branch-name validation that was not required by the specification or tests. This was removed before the implementation was accepted.
+
+The Feature 3 TDD cycle was:
+
+**Requirements → AI test design → Human review → 11 selected/modified tests → RED (11 failed, 12 passed) → AI implementation → Human review/modification → GREEN (23 passed) → Regression confirmed**
+
+---
+
 # Stage 5 — Remaining Feature Development
 
 **Status:** In progress.
 
 The same AI-assisted TDD process will be followed for the remaining features:
 
-- Feature 3 — Branching
 - Feature 4 — Checkout
 - Feature 5 — Merge
 - Feature 6 — Conflict Detection
 
 For each feature, this log will record the exact AI prompt, AI response summary, my evaluation, accepted/modified/rejected decisions, RED test result, implementation review, GREEN result, and evidence.
-
 ---
 
 # Stage 6 — Evaluation and Improvement of AI Output
