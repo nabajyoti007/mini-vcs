@@ -459,3 +459,207 @@ def test_failed_merge_leaves_current_branch_unchanged():
     assert repo.history() == history_before
     assert repo.branches["main"] == head_before
     assert repo.current_branch == "main"
+
+# Feature 6: Conflict Detection
+
+def test_different_files_merge_without_conflict():
+    repo = Repository()
+
+    repo.commit("Base", {"base.txt": "A"})
+    repo.create_branch("feature")
+
+    repo.commit("Main change", {"main.txt": "M"})
+
+    repo.checkout("feature")
+    repo.commit("Feature change", {"feature.txt": "F"})
+
+    repo.checkout("main")
+    repo.merge("feature")
+
+    assert repo.history()[-1]["changes"] == {"feature.txt": "F"}
+
+
+def test_source_only_change_is_not_a_conflict():
+    repo = Repository()
+
+    repo.commit("Base", {"shared.txt": "original"})
+    repo.create_branch("feature")
+
+    repo.checkout("feature")
+    repo.commit("Feature change", {"shared.txt": "feature version"})
+
+    repo.checkout("main")
+    repo.merge("feature")
+
+    assert repo.history()[-1]["changes"]["shared.txt"] == "feature version"
+
+
+def test_same_file_changed_differently_is_a_conflict():
+    repo = Repository()
+
+    repo.commit("Base", {"shared.txt": "original"})
+    repo.create_branch("feature")
+
+    repo.commit("Main change", {"shared.txt": "main version"})
+
+    repo.checkout("feature")
+    repo.commit("Feature change", {"shared.txt": "feature version"})
+
+    repo.checkout("main")
+
+    with pytest.raises(ValueError):
+        repo.merge("feature")
+
+
+def test_conflict_error_identifies_filename():
+    repo = Repository()
+
+    repo.commit("Base", {"shared.txt": "original"})
+    repo.create_branch("feature")
+
+    repo.commit("Main change", {"shared.txt": "main version"})
+
+    repo.checkout("feature")
+    repo.commit("Feature change", {"shared.txt": "feature version"})
+
+    repo.checkout("main")
+
+    with pytest.raises(ValueError) as error:
+        repo.merge("feature")
+
+    assert "shared.txt" in str(error.value)
+
+
+def test_same_file_changed_to_same_content_is_not_conflict():
+    repo = Repository()
+
+    repo.commit("Base", {"shared.txt": "original"})
+    repo.create_branch("feature")
+
+    repo.commit("Main change", {"shared.txt": "same"})
+
+    repo.checkout("feature")
+    repo.commit("Feature change", {"shared.txt": "same"})
+
+    repo.checkout("main")
+    repo.merge("feature")
+
+    assert repo.history()[-1]["changes"]["shared.txt"] == "same"
+
+
+def test_new_file_added_differently_on_both_branches_is_conflict():
+    repo = Repository()
+    repo.create_branch("feature")
+
+    repo.commit("Main addition", {"new.txt": "main"})
+
+    repo.checkout("feature")
+    repo.commit("Feature addition", {"new.txt": "feature"})
+
+    repo.checkout("main")
+
+    with pytest.raises(ValueError):
+        repo.merge("feature")
+
+
+def test_one_conflict_among_multiple_changes_fails_whole_merge():
+    repo = Repository()
+
+    repo.commit("Base", {"shared.txt": "original"})
+    repo.create_branch("feature")
+
+    repo.commit("Main change", {"shared.txt": "main"})
+
+    repo.checkout("feature")
+    repo.commit(
+        "Feature changes",
+        {
+            "a.txt": "A",
+            "shared.txt": "feature",
+            "b.txt": "B",
+        },
+    )
+
+    repo.checkout("main")
+    history_before = list(repo.history())
+    head_before = repo.branches["main"]
+
+    with pytest.raises(ValueError):
+        repo.merge("feature")
+
+    assert repo.history() == history_before
+    assert repo.branches["main"] == head_before
+
+
+def test_multiple_conflicting_filenames_are_reported():
+    repo = Repository()
+
+    repo.commit("Base", {"a.txt": "old-a", "b.txt": "old-b"})
+    repo.create_branch("feature")
+
+    repo.commit("Main changes", {
+        "a.txt": "main-a",
+        "b.txt": "main-b",
+    })
+
+    repo.checkout("feature")
+    repo.commit("Feature changes", {
+        "a.txt": "feature-a",
+        "b.txt": "feature-b",
+    })
+
+    repo.checkout("main")
+
+    with pytest.raises(ValueError) as error:
+        repo.merge("feature")
+
+    message = str(error.value)
+
+    assert "a.txt" in message
+    assert "b.txt" in message
+
+
+def test_conflicting_merge_leaves_current_branch_unchanged():
+    repo = Repository()
+
+    repo.commit("Base", {"shared.txt": "original"})
+    repo.create_branch("feature")
+
+    repo.commit("Main change", {"shared.txt": "main"})
+
+    repo.checkout("feature")
+    repo.commit("Feature change", {"shared.txt": "feature"})
+
+    source_history_before = list(repo.history())
+    source_head_before = repo.branches["feature"]
+
+    repo.checkout("main")
+
+    current_history_before = list(repo.history())
+    current_head_before = repo.branches["main"]
+
+    with pytest.raises(ValueError):
+        repo.merge("feature")
+
+    assert repo.history() == current_history_before
+    assert repo.branches["main"] == current_head_before
+
+    repo.checkout("feature")
+
+    assert repo.history() == source_history_before
+    assert repo.branches["feature"] == source_head_before
+
+
+def test_identical_new_file_on_both_branches_is_not_conflict():
+    repo = Repository()
+    repo.create_branch("feature")
+
+    repo.commit("Main addition", {"new.txt": "same"})
+
+    repo.checkout("feature")
+    repo.commit("Feature addition", {"new.txt": "same"})
+
+    repo.checkout("main")
+    repo.merge("feature")
+
+    assert repo.history()[-1]["changes"]["new.txt"] == "same"
