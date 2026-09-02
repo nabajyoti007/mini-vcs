@@ -39,3 +39,16 @@ class Repository:
     def history(self):
         """Return the commits on the current branch, oldest first."""
         return list(self._commits[self.current_branch])
+
+    def create_branch(self, name):
+        """Create a branch starting from the current branch's head."""
+        if not name.strip():
+            raise ValueError("Branch name cannot be empty")
+
+        if name in self.branches:
+            raise ValueError(f"Branch '{name}' already exists")
+
+        self.branches[name] = self.branches[self.current_branch]
+        self._commits[name] = list(self._commits[self.current_branch])
+
+        return name
