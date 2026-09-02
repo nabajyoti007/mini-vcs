@@ -194,3 +194,127 @@ def test_branch_head_is_independent_after_creation():
 
     assert repo.branches["feature"] == first_id
     assert repo.branches["main"] != repo.branches["feature"]
+
+# Feature 4: Checkout
+
+def test_checkout_switches_current_branch():
+    repo = Repository()
+    repo.create_branch("feature")
+
+    repo.checkout("feature")
+
+    assert repo.current_branch == "feature"
+
+
+def test_can_checkout_back_to_main():
+    repo = Repository()
+    repo.create_branch("feature")
+
+    repo.checkout("feature")
+    repo.checkout("main")
+
+    assert repo.current_branch == "main"
+
+
+def test_checkout_does_not_modify_branches():
+    repo = Repository()
+    repo.create_branch("feature")
+    branches_before = dict(repo.branches)
+
+    repo.checkout("feature")
+
+    assert repo.branches == branches_before
+
+
+def test_checkout_preserves_history_of_target_branch():
+    repo = Repository()
+
+    repo.commit("First", {"a.txt": "A"})
+    repo.commit("Second", {"b.txt": "B"})
+    repo.create_branch("feature")
+
+    repo.checkout("feature")
+
+    messages = [commit["message"] for commit in repo.history()]
+
+    assert messages == ["First", "Second"]
+
+
+def test_commit_after_checkout_is_recorded_on_new_branch():
+    repo = Repository()
+    repo.create_branch("feature")
+    repo.checkout("feature")
+
+    repo.commit("Feature work", {"feature.txt": "data"})
+
+    assert repo.history()[-1]["message"] == "Feature work"
+
+
+def test_commit_after_checkout_does_not_affect_other_branch():
+    repo = Repository()
+
+    repo.commit("Base", {"base.txt": "A"})
+    repo.create_branch("feature")
+
+    repo.checkout("feature")
+    repo.commit("Feature work", {"feature.txt": "B"})
+
+    repo.checkout("main")
+
+    messages = [commit["message"] for commit in repo.history()]
+
+    assert messages == ["Base"]
+
+
+def test_branches_keep_separate_histories_across_switches():
+    repo = Repository()
+
+    repo.commit("Base", {"base.txt": "A"})
+    repo.create_branch("feature")
+
+    repo.checkout("feature")
+    repo.commit("Feature work", {"feature.txt": "B"})
+
+    repo.checkout("main")
+    repo.commit("Main work", {"main.txt": "C"})
+
+    main_messages = [commit["message"] for commit in repo.history()]
+
+    repo.checkout("feature")
+    feature_messages = [commit["message"] for commit in repo.history()]
+
+    assert main_messages == ["Base", "Main work"]
+    assert feature_messages == ["Base", "Feature work"]
+
+
+def test_checkout_current_branch_is_allowed():
+    repo = Repository()
+
+    repo.checkout("main")
+
+    assert repo.current_branch == "main"
+
+
+def test_checkout_branch_with_no_commits():
+    repo = Repository()
+    repo.create_branch("feature")
+
+    repo.checkout("feature")
+
+    assert repo.history() == []
+
+
+def test_checkout_of_nonexistent_branch_is_rejected():
+    repo = Repository()
+
+    with pytest.raises(ValueError):
+        repo.checkout("does_not_exist")
+
+
+def test_failed_checkout_leaves_current_branch_unchanged():
+    repo = Repository()
+
+    with pytest.raises(ValueError):
+        repo.checkout("does_not_exist")
+
+    assert repo.current_branch == "main"
