@@ -3030,62 +3030,274 @@ The Feature 6 TDD cycle was:
 
 # Stage 7 — Final Testing, Coverage and Reflection
 
-**Status:** Pending
+## 7.1 Final Regression Testing
 
-The next stage will include:
+After completing all six required features, I executed the complete automated test suite to verify that the final implementation did not introduce regressions into previously completed functionality.
 
-- final regression testing,
-- test coverage measurement,
-- review of the complete source code,
-- review of the complete test suite,
-- identification of possible refactoring opportunities,
-- final GitHub repository check,
-- and final reflection on AI-assisted TDD.
+The command used was:
 
----
+```powershell
+python -m pytest -v
+```
 
-# Stage 7 — Final Testing and Reflection
+The final result was:
 
-**Status:** To be completed after all features are implemented.
+```text
+53 passed in 0.16s
+```
 
-The final section will record:
+All tests for the following features passed:
 
-- Full automated test result
-- Test coverage result
-- Final GitHub repository evidence
-- Areas where AI performed well
-- Areas where AI was incorrect or incomplete
-- How TDD affected development
-- How the test suite improved during development
-- Improvements that could be made with additional time
-
----
-
-## Feature-Level Development Record Template
-
-### Feature
-[Feature name]
-
-### AI Prompt
-[Exact prompt used]
-
-### AI Response Summary
-[Short summary]
-
-### My Evaluation
-[What was correct, incorrect, missing, or unnecessary]
-
-### Decision
-Accepted / Modified / Rejected
-
-### Changes Made
-[Changes made after reviewing AI output]
-
-### Tests Executed
-[pytest command]
+- Repository creation
+- Commit and commit history
+- Branching
+- Checkout
+- Merge
+- Conflict detection
 
 ### Result
-RED / GREEN / Regression passed
+
+**GREEN — 53 tests passed, 0 failed**
 
 ### Evidence
-[Screenshot filename and/or Git commit]
+
+`screenshots/13_final_tests.png`
+
+---
+
+## 7.2 Test Coverage
+
+After confirming that the complete test suite passed, I measured statement coverage using `pytest-cov`.
+
+The command used was:
+
+```powershell
+python -m pytest --cov=src --cov-report=term-missing
+```
+
+The result was:
+
+```text
+Name               Stmts   Miss   Cover
+----------------------------------------
+src\__init__.py        0      0    100%
+src\mini_vcs.py       53      0    100%
+----------------------------------------
+TOTAL                 53      0    100%
+
+53 passed
+```
+
+The final MiniVCS implementation achieved:
+
+- **53 statements**
+- **0 missed statements**
+- **100% statement coverage**
+- **53 passing automated tests**
+
+### Evidence
+
+`screenshots/14_coverage.png`
+
+### Result
+
+**100% statement coverage**
+
+The coverage result confirms that every executable statement in the final MiniVCS source code was exercised by at least one automated test.
+
+However, 100% statement coverage does not automatically mean that every possible behaviour or logical combination has been tested. The test suite was therefore designed using requirements, boundary conditions, invalid inputs, state-preservation checks, and regression scenarios rather than relying only on the coverage percentage.
+
+---
+
+## 7.3 Final Test Summary
+
+| Feature | Tests Added | Final Status |
+|---|---:|---|
+| Repository Creation | 4 | Passed |
+| Commit and Commit History | 8 | Passed |
+| Branching | 11 | Passed |
+| Checkout | 11 | Passed |
+| Merge | 9 | Passed |
+| Conflict Detection | 10 | Passed |
+| **Total** | **53** | **53 Passed** |
+
+The complete regression suite confirmed that adding later functionality did not break the behaviour implemented in earlier TDD cycles.
+
+---
+
+## 7.4 Evaluation of AI Contribution
+
+AI was useful throughout the project for:
+
+- generating initial requirement ideas,
+- suggesting normal, boundary, invalid, and regression test cases,
+- proposing minimal implementations after RED test results,
+- identifying possible defects such as shared mutable branch-history lists,
+- and explaining alternative implementation approaches.
+
+However, AI output was not always aligned with the specification.
+
+Several examples required human correction:
+
+1. AI proposed branch deletion even though it was outside the six required features.
+2. AI introduced arbitrary limits for branch names and commit messages.
+3. AI repeatedly suggested a `get_files()` API that was not required.
+4. AI proposed non-string `TypeError` validation without tests or requirements supporting it.
+5. AI suggested expanding `history()` to accept a branch parameter mainly to make testing easier.
+6. AI proposed `MergeConflictError` even after being explicitly instructed to continue using `ValueError`.
+7. The Feature 5 merge implementation passed its tests but did not detect conflicting changes until Feature 6 tests exposed the missing behaviour.
+
+These examples demonstrate why AI-generated output required critical review before being included in the software.
+
+---
+
+## 7.5 Strengths of AI-Assisted Development
+
+The main strengths of AI during the project were speed and idea generation.
+
+AI helped identify edge cases that could easily be overlooked, including:
+
+- whitespace-only input,
+- rejected operations modifying state,
+- branch-history aliasing,
+- identical changes on two branches,
+- multiple conflicting files,
+- and state preservation after failed merge operations.
+
+AI was also useful for explaining why particular tests were valuable rather than simply generating test code.
+
+This supported a more systematic test-design process.
+
+---
+
+## 7.6 Weaknesses of AI-Assisted Development
+
+The main weakness was that AI frequently inferred behaviour from real version-control systems instead of remaining strictly within the MiniVCS specification.
+
+This resulted in suggestions for:
+
+- unnecessary APIs,
+- additional validation,
+- unsupported operations,
+- and more complex designs than the current TDD stage required.
+
+AI responses also sometimes referred to outdated assumptions from earlier stages, such as the existence of `get_files()`.
+
+Therefore, every AI response had to be compared with:
+
+- the specification,
+- current tests,
+- current source code,
+- and the required feature scope.
+
+---
+
+## 7.7 Lessons Learned from TDD
+
+The project demonstrated the importance of the RED → GREEN cycle.
+
+Writing tests before implementation made the expected behaviour explicit and created evidence that implementation was driven by requirements.
+
+The RED stages showed exactly what functionality was missing.
+
+Examples included:
+
+```text
+Feature 2:
+8 failed, 4 passed
+
+Feature 3:
+11 failed, 12 passed
+
+Feature 4:
+11 failed, 23 passed
+
+Feature 5:
+9 failed, 34 passed
+
+Feature 6:
+6 failed, 47 passed
+```
+
+After each implementation stage, the complete test suite was rerun.
+
+This ensured that new functionality did not break earlier features.
+
+The project also showed that a GREEN test suite is only as strong as the behaviours represented by its tests. Feature 5 passed all forty-three tests at the time but still lacked conflict detection. Feature 6 tests exposed that missing behaviour and drove the next implementation change.
+
+---
+
+## 7.8 Testing Improvements During Development
+
+The test suite improved progressively throughout the project.
+
+Early tests focused mainly on direct behaviour, such as the initial branch and empty history.
+
+Later tests became more defensive and checked repository state before and after failed operations.
+
+A recurring pattern developed:
+
+**Validate first → mutate only after validation succeeds**
+
+This was tested for:
+
+- invalid commits,
+- duplicate branch creation,
+- failed checkout,
+- invalid merge,
+- and conflicting merge.
+
+Regression testing also became increasingly important because every new feature was tested together with all previous features.
+
+By the final stage, the suite contained 53 automated tests covering the complete MiniVCS implementation.
+
+---
+
+## 7.9 Remaining Limitations and Future Improvements
+
+The final MiniVCS is intentionally simplified.
+
+Current limitations include:
+
+- Repository data exists only in memory.
+- There is no disk persistence.
+- There are no remote repositories.
+- There is no authentication or multi-user support.
+- File deletion is not represented.
+- Merge operates at whole-file level rather than line level.
+- Conflicts are detected but not automatically resolved.
+- Commit-ID comparison provides a simplified form of divergence detection rather than a complete Git-style commit graph.
+- Complex repeated merge ancestry is not fully represented.
+
+Possible future improvements include:
+
+- persistent repository storage,
+- explicit commit-parent relationships,
+- true common-ancestor calculation,
+- three-way merge,
+- file deletion support,
+- line-level conflict detection,
+- and richer repository inspection tools.
+
+These improvements were intentionally excluded from the current assignment scope.
+
+---
+
+## 7.10 Final Reflection
+
+The project showed that AI can be useful in software development when combined with structured testing and human review.
+
+AI accelerated requirements analysis, test brainstorming, implementation suggestions, and defect identification. However, several AI outputs contained unnecessary assumptions or violated explicit constraints.
+
+TDD provided a controlled way to evaluate these suggestions.
+
+Instead of accepting generated code because it appeared reasonable, behaviour was defined through tests first, the implementation was executed against those tests, and previous tests were retained as regression protection.
+
+The final project completed all six required MiniVCS features with:
+
+- **53 automated tests**
+- **53 passing tests**
+- **0 failed tests**
+- **100% statement coverage**
+
+The most important lesson from the project was that AI output should be treated as a proposal that must be tested, reviewed, and justified rather than as automatically correct software.
