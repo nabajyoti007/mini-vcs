@@ -663,3 +663,19 @@ def test_identical_new_file_on_both_branches_is_not_conflict():
     repo.merge("feature")
 
     assert repo.history()[-1]["changes"]["new.txt"] == "same"
+
+def test_long_commit_message_is_accepted():
+    repo = Repository()
+
+    message = "A" * 1000
+    repo.commit(message, {})
+
+    assert repo.history()[-1]["message"] == message
+
+
+def test_commit_message_with_surrounding_whitespace_is_accepted():
+    repo = Repository()
+
+    repo.commit("  Valid message  ", {})
+
+    assert repo.history()[-1]["message"] == "  Valid message  "
