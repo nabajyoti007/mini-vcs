@@ -160,11 +160,109 @@ This stage demonstrated why AI output should not be accepted automatically. Revi
 
 ---
 
-# Stage 4 — Test Design
+# Stage 4 — Test Design and Implementation
 
-**Status:** To be completed during development.
+## Feature 1 — Repository Creation
 
-For each feature, record the feature, AI prompt, proposed tests, accepted/modified/rejected tests, reasons for changes, final tests, initial failing result (RED), and evidence.
+### 4.1 Feature Description
+
+The first feature developed using TDD was repository creation.
+
+The required behaviour was:
+
+- A new repository contains a default branch named `main`.
+- `main` is the current branch.
+- A new repository has no commits.
+- The initial repository contains only one branch.
+
+No commit, checkout, branching, merge, or conflict-detection functionality was implemented at this stage.
+
+---
+
+### 4.2 Initial AI Test-Design Prompt
+
+The following prompt was given to Claude before writing the implementation:
+
+> I am starting Test-Driven Development for Feature 1: Repository Creation in my Mini Version Control System.
+>
+> Requirements:
+> - A new repository must contain a default branch named "main".
+> - "main" must be the current branch.
+> - A new repository must have no commits.
+> - A new repository must have no files.
+>
+> Generate ONLY the pytest unit-test design for this feature.
+>
+> For each test, include:
+> 1. Test name
+> 2. What it checks
+> 3. Why it is necessary
+>
+> Do not write implementation code.
+> Do not write the Repository class.
+> Do not include tests for commit, checkout, branching, merge, conflict detection, or history beyond the empty initial history.
+> Keep the response concise.
+
+---
+
+### 4.3 AI Test-Design Response Summary
+
+Claude proposed five tests:
+
+1. `test_new_repository_has_main_branch`
+2. `test_main_is_the_current_branch`
+3. `test_new_repository_has_exactly_one_branch`
+4. `test_new_repository_has_no_commits`
+5. `test_new_repository_has_no_files`
+
+Claude also suggested using a pytest fixture to create a fresh `Repository` object for each test.
+
+---
+
+### 4.4 My Evaluation of the AI-Generated Tests
+
+I reviewed the proposed tests before adding them to the project.
+
+I accepted the first four tests because they directly test the initial repository requirements.
+
+I did not use the proposed `test_new_repository_has_no_files` test. The AI assumed that the application would provide a `get_files()` method, but this method had not been defined in the specification. Adding this test would therefore introduce an additional API based on an AI assumption rather than an existing requirement.
+
+I also decided not to use the suggested pytest fixture at this stage. The test suite was very small, and creating a new `Repository()` directly inside each test kept the tests simple and easy to understand.
+
+### Decision
+
+**Modified**
+
+Four of the five proposed tests were accepted. One test was rejected/postponed because it depended on an unspecified `get_files()` method.
+
+---
+
+### 4.5 Initial Automated Tests
+
+The following four tests were added to `tests/test_mini_vcs.py` before implementing the `Repository` class:
+
+```python
+from src.mini_vcs import Repository
+
+
+def test_new_repository_has_main_branch():
+    repo = Repository()
+    assert "main" in repo.branches
+
+
+def test_main_is_the_current_branch():
+    repo = Repository()
+    assert repo.current_branch == "main"
+
+
+def test_new_repository_has_exactly_one_branch():
+    repo = Repository()
+    assert len(repo.branches) == 1
+
+
+def test_new_repository_has_no_commits():
+    repo = Repository()
+    assert repo.history() == []
 
 ---
 
