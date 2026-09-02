@@ -59,3 +59,26 @@ class Repository:
             raise ValueError(f"Branch '{name}' does not exist")
 
         self.current_branch = name
+
+    def merge(self, source_branch):
+        """Merge changes from another branch into the current branch."""
+        if source_branch not in self.branches:
+            raise ValueError(f"Branch '{source_branch}' does not exist")
+
+        if source_branch == self.current_branch:
+            raise ValueError("Cannot merge a branch into itself")
+
+        current_ids = {
+            commit["id"] for commit in self._commits[self.current_branch]
+        }
+
+        merged_changes = {}
+
+        for commit in self._commits[source_branch]:
+            if commit["id"] not in current_ids:
+                merged_changes.update(commit["changes"])
+
+        self.commit(
+            f"Merge branch '{source_branch}'",
+            merged_changes
+        )
