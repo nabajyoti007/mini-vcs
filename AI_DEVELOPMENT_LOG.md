@@ -2001,16 +2001,444 @@ The Feature 4 TDD cycle was:
 
 ---
 
-# Stage 5 — Remaining Feature Development
+## Feature 5 — Merge
 
-**Status:** In progress.
+### 5.1 Feature Description
 
-The same AI-assisted TDD process will be followed for the remaining features:
+The fifth feature developed using AI-assisted TDD was branch merging.
 
-- Feature 5 — Merge
-- Feature 6 — Conflict Detection
+The required behaviour was:
 
-For each feature, this log will record the AI prompt, AI response summary, my evaluation, accepted/modified/rejected decisions, RED test result, implementation review, GREEN result, and evidence.
+- `merge(source_branch)` merges a named source branch into the current branch.
+- The source branch must exist.
+- A branch cannot be merged into itself.
+- A successful merge creates one new commit on the current branch.
+- Changes made on the source branch after divergence are included in the merge commit.
+- Multiple source commits are combined into the merge commit.
+- If the same file is changed multiple times on the source branch, the latest source value is used.
+- Existing current-branch history must be preserved.
+- The source branch must remain unchanged.
+- If the source branch has no new commits, a merge commit with an empty `changes` dictionary is still created.
+- Conflict detection is not handled in this feature and is deferred to Feature 6.
+
+---
+
+### 5.2 Initial AI Test-Design Prompt
+
+The following prompt was given to Claude before implementing merge:
+
+> I am continuing AI-assisted Test-Driven Development for my Mini Version Control System.
+>
+> Feature 5 is Merge.
+>
+> Existing functionality:
+> - A repository starts on "main".
+> - Commits can be created on the current branch.
+> - Commit history is returned oldest first.
+> - Branches can be created from the current branch.
+> - A new branch inherits the current branch's head and commit history.
+> - Checkout switches between existing branches.
+> - Different branches maintain independent commit histories.
+>
+> Current commit representation:
+> - Each commit stores:
+>   - "id"
+>   - "message"
+>   - "changes"
+> - "changes" is a dictionary mapping file names to their new contents.
+> - There is currently no get_files() public API.
+>
+> Requirements for Feature 5:
+> - merge(source_branch) merges a named source branch into the current branch.
+> - The source branch must exist.
+> - A branch must not be merged into itself.
+> - A successful non-conflicting merge must update the current branch.
+> - The source branch must remain unchanged after a successful merge.
+> - Merge must preserve existing commit history.
+> - If the source branch contains changes that do not conflict with the current branch, those changes should be incorporated into the current branch.
+> - The merge operation should create a new commit on the current branch representing the merge.
+> - Merge behaviour must work when the source branch has no new commits since divergence.
+> - Do not implement automatic conflict resolution in this feature.
+> - Conflict detection will be handled as Feature 6.
+>
+> Generate ONLY the pytest unit-test design for Feature 5.
+>
+> For each test, include:
+> 1. Test name
+> 2. What it checks
+> 3. Why it is necessary
+>
+> Include normal, boundary, invalid and regression-relevant cases.
+>
+> Do not write implementation code.
+> Do not write the merge method.
+> Do not add get_files().
+> Do not add optional parameters to history().
+> Do not invent new public APIs unless clearly required.
+> Do not design automatic conflict resolution yet.
+
+---
+
+### 5.3 AI Test-Design Response Summary
+
+Claude proposed fourteen possible merge tests covering:
+
+- creation of a merge commit,
+- merge commit IDs,
+- incorporation of source changes,
+- preservation of current-branch changes,
+- preservation of source branch state,
+- history ordering,
+- source branches with no new commits,
+- branches with no commits,
+- single and multiple file changes,
+- missing source branches,
+- self-merge rejection,
+- state preservation after a failed merge,
+- branch-list preservation,
+- repeated merges.
+
+Claude also identified an important design issue: merge needs a way to distinguish commits inherited when the branch was created from commits added to the source branch after divergence.
+
+The AI discussed several possible approaches, including replaying source changes, comparing final states, and performing a three-way merge using a common ancestor.
+
+---
+
+### 5.4 My Evaluation of the AI-Generated Tests
+
+I reviewed the proposed tests and reduced the set to nine tests that directly matched the current Feature 5 requirements and existing public API.
+
+I selected tests covering:
+
+1. Creation of exactly one merge commit.
+2. Incorporation of source changes.
+3. Preservation of current-branch history.
+4. Preservation of the source branch.
+5. Merge when the source has no new commits.
+6. Multiple source changes.
+7. Rejection of a non-existent source branch.
+8. Rejection of merging a branch into itself.
+9. Preservation of repository state after a failed merge.
+
+I did not include a separate test requiring `merge()` to return a commit ID because the specification did not require a merge return value.
+
+I also did not include repeated-merge behaviour because the current specification does not define how already-merged ancestry should be tracked.
+
+The AI initially raised uncertainty about whether commits stored `"files"` or `"changes"`. I verified the actual implementation and confirmed that commits store:
+
+```python
+{
+    "id": commit_id,
+    "message": message,
+    "changes": dict(changes),
+}
+```
+
+Therefore, the tests were designed against the actual `"changes"` representation rather than an invented snapshot API.
+
+### Decision
+
+**Modified**
+
+The AI-generated design was useful, but I selected a smaller set of tests and kept them aligned with the existing specification and implementation.
+
+---
+
+### 5.5 Initial Automated Tests
+
+Nine merge tests were added to `tests/test_mini_vcs.py` before implementation.
+
+The tests covered normal, boundary, invalid, and regression-relevant behaviour.
+
+Examples included:
+
+```python
+def test_merge_adds_commit_to_current_branch():
+    repo = Repository()
+
+    repo.commit("Base", {"base.txt": "A"})
+    repo.create_branch("feature")
+
+    repo.checkout("feature")
+    repo.commit("Feature work", {"feature.txt": "B"})
+
+    repo.checkout("main")
+    history_before = len(repo.history())
+
+    repo.merge("feature")
+
+    assert len(repo.history()) == history_before + 1
+```
+
+Source changes were also verified:
+
+```python
+def test_merge_commit_contains_source_changes():
+    repo = Repository()
+
+    repo.commit("Base", {"base.txt": "A"})
+    repo.create_branch("feature")
+
+    repo.checkout("feature")
+    repo.commit("Feature work", {"feature.txt": "B"})
+
+    repo.checkout("main")
+    repo.merge("feature")
+
+    merge_commit = repo.history()[-1]
+
+    assert merge_commit["changes"] == {"feature.txt": "B"}
+```
+
+Invalid merge behaviour was tested using:
+
+```python
+def test_merge_of_nonexistent_branch_is_rejected():
+    repo = Repository()
+
+    with pytest.raises(ValueError):
+        repo.merge("does_not_exist")
+
+
+def test_merge_branch_into_itself_is_rejected():
+    repo = Repository()
+
+    with pytest.raises(ValueError):
+        repo.merge("main")
+```
+
+A regression test also confirmed that a failed merge does not partially modify repository state.
+
+---
+
+### 5.6 RED Stage — Initial Test Execution
+
+Before implementing `merge()`, the complete test suite was executed:
+
+```text
+python -m pytest -v
+```
+
+The thirty-four tests from Features 1–4 continued to pass.
+
+All nine new Feature 5 tests failed because `merge()` did not yet exist.
+
+The main error was:
+
+```text
+AttributeError: 'Repository' object has no attribute 'merge'
+```
+
+The result was:
+
+```text
+9 failed, 34 passed in 0.43s
+```
+
+This was the expected RED stage and demonstrated that the merge tests existed and were executed before implementation.
+
+### Result
+
+**RED — 9 failed, 34 passed**
+
+### Evidence
+
+`screenshots/09_merge_red.png`
+
+---
+
+### 5.7 AI Implementation Prompt
+
+After recording the RED stage, Claude was asked to provide the smallest implementation required to satisfy the nine merge tests.
+
+The prompt specified that:
+
+- only source changes after divergence should be merged,
+- inherited commits must not be merged again,
+- multiple source commits should be combined,
+- the latest source value should win if a file appears in multiple source commits,
+- validation must happen before state modification,
+- the source branch must remain unchanged,
+- conflict detection must not yet be implemented,
+- no `get_files()` or new public APIs should be introduced,
+- existing Features 1–4 should not be unnecessarily rewritten.
+
+The current RED result of `9 failed, 34 passed` was also provided to the AI.
+
+---
+
+### 5.8 AI Implementation Response Summary
+
+Claude proposed determining source-side commits by comparing commit IDs.
+
+The current branch's commit IDs were collected into a set. Source commits whose IDs were not present in that set were treated as commits made after divergence.
+
+The proposed logic was conceptually:
+
+```python
+current_ids = {
+    commit["id"] for commit in self._commits[self.current_branch]
+}
+
+merged_changes = {}
+
+for commit in self._commits[source_branch]:
+    if commit["id"] not in current_ids:
+        merged_changes.update(commit["changes"])
+```
+
+Claude recommended using the existing `commit()` method to create the merge commit instead of manually creating another commit structure.
+
+The AI correctly noted that repeated calls to `dict.update()` mean the latest source-side value is retained when the same file appears in multiple source commits.
+
+Claude also identified an important limitation: this is a simplified set-difference approach rather than a complete Git-style common-ancestor algorithm.
+
+---
+
+### 5.9 My Evaluation of the AI Implementation
+
+The proposed approach was appropriate for the current simplified MiniVCS requirements and the Feature 5 tests.
+
+I accepted the following ideas:
+
+- Validate the source branch before changing repository state.
+- Reject merging the current branch into itself.
+- Compare commit IDs to avoid treating inherited commits as new source changes.
+- Combine source changes in chronological order.
+- Use `dict.update()` so later source changes overwrite earlier source changes for the same file.
+- Reuse the already-tested `commit()` method to create the merge commit.
+- Leave the source branch unchanged.
+
+I also reviewed an important limitation of the approach.
+
+The implementation does not perform true three-way merge analysis. It determines source-side commits using commit-ID membership. This works for the current simple branching structure but may not correctly represent ancestry after more complicated repeated merges.
+
+The implementation also does not detect files modified differently on both branches. At this stage, such a situation could allow source changes to be included without detecting that the current branch also modified the same file.
+
+This limitation was intentionally left for Feature 6, where conflict-detection tests will be written before improving the implementation.
+
+### Decision
+
+**Modified / Accepted for current Feature 5 scope**
+
+The core AI approach was accepted, while unnecessary return-value behaviour was avoided and the ancestry/conflict limitations were explicitly documented.
+
+---
+
+### 5.10 Final Feature 5 Implementation
+
+The following method was added to the existing `Repository` class:
+
+```python
+def merge(self, source_branch):
+    """Merge changes from another branch into the current branch."""
+    if source_branch not in self.branches:
+        raise ValueError(f"Branch '{source_branch}' does not exist")
+
+    if source_branch == self.current_branch:
+        raise ValueError("Cannot merge a branch into itself")
+
+    current_ids = {
+        commit["id"] for commit in self._commits[self.current_branch]
+    }
+
+    merged_changes = {}
+
+    for commit in self._commits[source_branch]:
+        if commit["id"] not in current_ids:
+            merged_changes.update(commit["changes"])
+
+    self.commit(
+        f"Merge branch '{source_branch}'",
+        merged_changes
+    )
+```
+
+No existing Feature 1–4 methods were replaced.
+
+---
+
+### 5.11 GREEN Stage — Test Execution
+
+After adding the reviewed `merge()` implementation, the complete test suite was executed again:
+
+```text
+python -m pytest -v
+```
+
+The result was:
+
+```text
+43 passed in 0.15s
+```
+
+All previous tests continued to pass and all nine new merge tests passed.
+
+### Result
+
+**GREEN — 43 passed**
+
+### Evidence
+
+`screenshots/10_merge_green.png`
+
+---
+
+### 5.12 Critical Observation Before Feature 6
+
+Although all forty-three tests pass, the merge implementation is not yet complete according to the final MiniVCS specification.
+
+The current implementation does not determine whether the same file was changed differently on both branches after divergence.
+
+For example:
+
+```text
+Base:
+config.txt = "A"
+
+main:
+config.txt = "B"
+
+feature:
+config.txt = "C"
+```
+
+The current Feature 5 implementation does not identify this as a conflict.
+
+This is an important example of why passing tests does not automatically mean the complete system is correct. The Feature 5 tests were deliberately scoped to non-conflicting merge behaviour.
+
+Feature 6 will introduce tests that expose this missing behaviour before conflict detection is implemented.
+
+---
+
+### 5.13 Feature 5 Reflection
+
+Feature 5 showed that merge behaviour requires more reasoning than the previous repository operations.
+
+The AI correctly identified that inherited commits should not simply be treated as new source changes. Commit IDs were therefore used to distinguish shared history from source-side commits.
+
+The human review was important because the AI initially questioned the actual commit representation. Checking the existing source code confirmed that the system stores `"changes"` rather than `"files"`.
+
+The final implementation passed all forty-three tests, but analysis identified that successful tests only demonstrate the behaviours currently tested. Conflict scenarios remain intentionally unsupported.
+
+The Feature 5 TDD cycle was:
+
+**Requirements → AI test design → Human review → 9 selected tests → RED (9 failed, 34 passed) → AI implementation → Human review → GREEN (43 passed) → Limitation identified for Feature 6**
+
+---
+
+# Stage 6 — Conflict Detection
+
+**Status:** Not started.
+
+Feature 6 will use the same AI-assisted TDD process to implement the remaining conflict-detection requirements:
+
+- Detect when the same file was modified differently on both branches after divergence.
+- Report the conflicting filename or filenames.
+- Prevent creation of a merge commit when conflicts exist.
+- Leave both branches unchanged after a conflicting merge.
+- Allow identical changes to the same file without treating them as conflicts.
+- Continue supporting non-conflicting merges.
 ---
 
 # Stage 6 — Evaluation and Improvement of AI Output
