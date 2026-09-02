@@ -52,3 +52,10 @@ class Repository:
         self._commits[name] = list(self._commits[self.current_branch])
 
         return name
+
+    def checkout(self, name):
+        """Switch the current branch to an existing branch."""
+        if name not in self.branches:
+            raise ValueError(f"Branch '{name}' does not exist")
+
+        self.current_branch = name
