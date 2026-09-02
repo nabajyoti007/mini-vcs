@@ -68,17 +68,53 @@ class Repository:
         if source_branch == self.current_branch:
             raise ValueError("Cannot merge a branch into itself")
 
+        current_commits = self._commits[self.current_branch]
+        source_commits = self._commits[source_branch]
+
         current_ids = {
-            commit["id"] for commit in self._commits[self.current_branch]
+            commit["id"] for commit in current_commits
         }
 
-        merged_changes = {}
+        source_ids = {
+            commit["id"] for commit in source_commits
+        }
 
-        for commit in self._commits[source_branch]:
-            if commit["id"] not in current_ids:
-                merged_changes.update(commit["changes"])
+        our_changes = self._changes_since_divergence(
+            current_commits,
+            source_ids
+        )
+
+        their_changes = self._changes_since_divergence(
+            source_commits,
+            current_ids
+        )
+
+        conflicts = [
+            filename
+            for filename, content in their_changes.items()
+            if filename in our_changes
+            and our_changes[filename] != content
+        ]
+
+        if conflicts:
+            conflicts.sort()
+
+            raise ValueError(
+                f"Merge conflict detected in: {', '.join(conflicts)}"
+            )
 
         self.commit(
             f"Merge branch '{source_branch}'",
-            merged_changes
+            their_changes
         )
+
+    @staticmethod
+    def _changes_since_divergence(commits, other_ids):
+        """Return accumulated changes not shared with the other branch."""
+        changes = {}
+
+        for commit in commits:
+            if commit["id"] not in other_ids:
+                changes.update(commit["changes"])
+
+        return changes
